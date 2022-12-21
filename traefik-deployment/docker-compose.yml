@@ -1,0 +1,56 @@
+version: '3.8'
+
+volumes:
+  traefik-ssl-dev-certs:
+  traefik-ssl-prod-certs:
+
+services:
+  reverse-proxy:
+    image: traefik:v2.9
+    ports:
+      - "80:80"
+      - "443:443"
+      # The Web UI (enabled by --api.insecure=true or configured in traefik.yml)
+      - "8080:8080"
+    volumes:
+      # So that Traefik can listen to the Docker events
+      - /var/run/docker.sock:/var/run/docker.sock
+      # static configuration
+      - ./traefik.yml:/etc/traefik/traefik.yml
+      # dev certs
+      - traefik-ssl-dev-certs:/ssl-certs/dev
+      # production certs
+      - traefik-ssl-prod-certs:/ssl-certs/prod
+  ups-api:
+    build:
+      context: ../dumbapi
+      dockerfile: Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:80
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.dotnetapprouter.rule=(Host(`localhost`) && PathPrefix(`/ups`))
+      - traefik.http.routers.dotnetapprouter.entryPoints=websecure
+      - traefik.http.routers.dotnetapprouter.tls=true
+      - traefik.http.routers.dotnetapprouter.tls.certresolver=staging
+      - traefik.http.services.ups-api.loadbalancer.server.port=80
+      - traefik.http.routers.dotnetapprouter.middlewares=dotnetapp-stripprefix
+      - traefik.http.middlewares.dotnetapp-stripprefix.stripprefix.prefixes=/ups
+  fedex-api:
+    build:
+      context: ../dumbapitwo
+      dockerfile: Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:80
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.fedex-router.rule=(Host(`localhost`) && PathPrefix(`/fedex`))
+      - traefik.http.routers.fedex-router.entryPoints=websecure
+      - traefik.http.routers.fedex-router.tls=true
+      - traefik.http.routers.fedex-router.tls.certresolver=staging
+      - traefik.http.services.fedex-api.loadbalancer.server.port=80
+      - traefik.http.routers.fedex-router.middlewares=fedex-stripprefix
+      - traefik.http.middlewares.fedex-stripprefix.stripprefix.prefixes=/fedex
+
